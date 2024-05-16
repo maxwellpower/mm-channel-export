@@ -1,0 +1,11 @@
+.idea
+.history
+.vscode
+.DS_Store
+.github
+.gitignore
+README.md
+LICENSE
+defaults.env
+.env
+Dockerfile

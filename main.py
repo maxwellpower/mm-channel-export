@@ -14,7 +14,7 @@
 
 # -*- coding: utf-8 -*-
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 import requests
 import os
@@ -64,7 +64,14 @@ def get_file_info(file_id):
     url = f'{BASE_URL}/files/{file_id}/info'
     response = session.get(url, headers=HEADERS)
     response.raise_for_status()
-    return response.json()
+    file_info = response.json()
+    return {
+        'id': file_info['id'],
+        'name': file_info['name'],
+        'size': file_info['size'],
+        'mime_type': file_info['mime_type'],
+        'download_url': f'{BASE_URL}/files/{file_id}'
+    }
 
 def get_channel_name(channel_id):
     url = f'{BASE_URL}/channels/{channel_id}'
@@ -173,7 +180,7 @@ def format_post(post, is_main):
     edited = 'Yes' if post['edit_at'] > 0 else 'No'
     deleted = 'Yes' if post['delete_at'] > 0 else 'No'
     thread_indicator = f"<span class='small'>{post['root_id']}</span>" if post['root_id'] and not is_main else ""
-    return f"<tr class='{style}'><th scope='row' class='small'>{post['id']}</th><td>{post['message']}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td>{edited}</td><td>{deleted}</td><td>{attachments}</td><td>{thread_indicator}</td></tr>"
+    return f"<tr class='{style}'><th scope='row' class='small'>{post['id']}</th><td style='word-wrap: break-word;max-width: 375px'>{post['message']}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td>{edited}</td><td>{deleted}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{thread_indicator}</td></tr>"
 
 def generate_csv(posts):
     with open('output/channel_posts.csv', 'w', newline='') as file:

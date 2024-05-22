@@ -29,6 +29,7 @@ CHANNEL_ID=your_channel_id_here
 FETCH_ALL=false # Set true to ignore dates below and fetch all posts
 START_DATE=2023-01-01
 END_DATE=2023-12-31
+VERIFY_SSL=true
 ```  
 
 Replace the placeholder values with your API token, base URL, channel ID, and the desired date range.

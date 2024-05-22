@@ -14,7 +14,7 @@
 
 # -*- coding: utf-8 -*-
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 import requests
 import os
@@ -36,6 +36,7 @@ CHANNEL_ID = os.getenv('CHANNEL_ID')
 START_DATE = os.getenv('START_DATE')
 END_DATE = os.getenv('END_DATE')
 FETCH_ALL = os.getenv('FETCH_ALL', 'False').lower() == 'true'  # Checks if the environment variable is 'true'
+VERIFY_SSL = os.getenv('VERIFY_SSL', 'True').lower() == 'true'  # Checks if SSL verification should be disabled
 HEADERS = {'Authorization': f'Bearer {API_TOKEN}'}
 
 # Set up logging
@@ -54,7 +55,7 @@ def get_user(user_id):
     if user_id in user_cache:
         return user_cache[user_id]
     url = f'{BASE_URL}/users/{user_id}'
-    response = session.get(url, headers=HEADERS)
+    response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
     response.raise_for_status()
     user_info = response.json()
     user_cache[user_id] = user_info
@@ -62,7 +63,7 @@ def get_user(user_id):
 
 def get_file_info(file_id):
     url = f'{BASE_URL}/files/{file_id}/info'
-    response = session.get(url, headers=HEADERS)
+    response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
     response.raise_for_status()
     file_info = response.json()
     return {
@@ -75,7 +76,7 @@ def get_file_info(file_id):
 
 def get_channel_name(channel_id):
     url = f'{BASE_URL}/channels/{channel_id}'
-    response = session.get(url, headers=HEADERS)
+    response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
     response.raise_for_status()
     channel_info = response.json()
     return channel_info['display_name']
@@ -92,7 +93,7 @@ def get_posts(channel_id, start_date=None, end_date=None):
 
     while True:
         url = f'{BASE_URL}/channels/{channel_id}/posts?page={page}&per_page={per_page}'
-        response = session.get(url, headers=HEADERS)
+        response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
         response.raise_for_status()
         data = response.json()
         posts = data['posts']

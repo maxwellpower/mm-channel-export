@@ -29,8 +29,10 @@ CHANNEL_ID=your_channel_id_here
 FETCH_ALL=false # Set true to ignore dates below and fetch all posts
 START_DATE=2023-01-01
 END_DATE=2023-12-31
-VERIFY_SSL=true
-```  
+VERIFYSSL=true # Set false to ignore SSL errors
+DEBUG_MODE=false  # Set to true to enable debug logging
+TZ=UTC # Set to your logging timezone
+```
 
 Replace the placeholder values with your API token, base URL, channel ID, and the desired date range.
 

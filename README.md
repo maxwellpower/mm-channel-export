@@ -1,6 +1,6 @@
 # Mattermost Channel Export
 
-This Docker container is designed to fetch and export posts from a specified Mattermost channel using the Mattermost API. It generates an HTML, CSV, and JSON report containing the messages posted within a specified date range.
+This Docker container is designed to fetch and export posts from a specified Mattermost channel using the Mattermost API. It generates a HTML, CSV, and JSON reports containing the messages posted within a specified date range.
 
 ## Prerequisites
 
@@ -56,13 +56,13 @@ This command will configure the Docker container using the environment variables
 
 ## Output
 
-The script will generate an HTML file named channel_posts.html and channel_posts.csv in the working directory inside the Docker container. To access the file outside of the Docker environment, consider mounting a volume to your Docker container:
+The script will generate an HTML file named `channel_posts.html`, a CSV named `channel_posts.csv` and a JSON named `channel_posts.json` in the working directory inside the Docker container. To access the file outside of the Docker environment, consider mounting a volume to your Docker container:
 
 ```bash
 docker run --env-file .env -v $(pwd)/output:/app/output ghcr.io/maxwellpower/mm-channel-export
 ```
 
-This will save the channel_posts.html and channel_posts.csv to the output directory on your host machine.
+This will save the `channel_posts.html`, `channel_posts.csv`, and `channel_posts.json` to the output directory on your host machine.
 
 ## Troubleshooting
 

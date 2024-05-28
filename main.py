@@ -12,7 +12,7 @@
 # AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 import requests
 import os
@@ -27,7 +27,6 @@ import urllib3
 from collections import defaultdict
 import re
 import markdown
-import html
 
 # Load environment variables
 load_dotenv()
@@ -59,11 +58,29 @@ session.mount('https://', HTTPAdapter(max_retries=retries))
 
 # User cache
 user_cache = {}
+is_system_admin = False
 
 def validate_config():
     if not API_TOKEN or not BASE_URL or not CHANNEL_ID:
         logging.error("ERROR: Missing essential configuration. Please set API_TOKEN, BASE_URL, and CHANNEL_ID.")
         exit(1)
+
+def get_current_user():
+    url = f'{BASE_URL}/users/me'
+    response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
+    response.raise_for_status()
+    user_info = response.json()
+    return user_info
+
+def check_system_admin():
+    global is_system_admin
+    current_user = get_current_user()
+    roles = current_user.get('roles', '')
+    is_system_admin = 'system_admin' in roles
+    if is_system_admin:
+        logging.info("User is a system admin. Fetching deleted posts is enabled.")
+    else:
+        logging.warning("User is not a system admin. Fetching deleted posts is disabled.")
 
 def get_user(user_id):
     if user_id in user_cache:
@@ -78,27 +95,19 @@ def get_user(user_id):
 
 def get_file_info(file_id):
     url = f'{BASE_URL}/files/{file_id}/info'
-    try:
-        response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
-        response.raise_for_status()
-        file_info = response.json()
-        logging.debug(f"Retrieved file info: {file_info}")
-        return {
-            'id': file_info.get('id'),
-            'name': file_info.get('name'),
-            'size': file_info.get('size'),
-            'mime_type': file_info.get('mime_type'),
-            'upload_time': datetime.fromtimestamp(file_info['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S') if file_info.get('create_at') else 'N/A',
-            'uploader_id': file_info.get('user_id'),
-            'download_url': f'{BASE_URL}/files/{file_id}'
-        }
-    except requests.HTTPError as e:
-        if e.response.status_code == 404:
-            logging.debug(f"File not found: {file_id}, post may have been deleted?")
-            return None
-        else:
-            logging.error(f"HTTP error occurred while fetching file info: {e.response.status_code} - {e.response.text}")
-            raise
+    response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
+    response.raise_for_status()
+    file_info = response.json()
+    logging.debug(f"Retrieved file info: {file_info}")
+    return {
+        'id': file_info.get('id'),
+        'name': file_info.get('name'),
+        'size': file_info.get('size'),
+        'mime_type': file_info.get('mime_type'),
+        'upload_time': datetime.fromtimestamp(file_info['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S') if file_info.get('create_at') else 'N/A',
+        'uploader_id': file_info.get('user_id'),
+        'download_url': f'{BASE_URL}/files/{file_id}'
+    }
 
 def get_channel_name(channel_id):
     url = f'{BASE_URL}/channels/{channel_id}'
@@ -127,38 +136,41 @@ def highlight_mentions(message):
     return re.sub(r'(@[a-zA-Z0-9_.-]+)', r'<span style="color: blue;">\1</span>', message)
 
 def format_markdown(message):
-    html_content = markdown.markdown(message, extensions=['fenced_code', 'tables'])
-    return html_content
+    html = markdown.markdown(message, extensions=['fenced_code', 'tables'])
+    return html
 
-def get_posts(channel_id, start_date=None, end_date=None, include_deleted=False):
+def get_posts(channel_id):
     all_posts = {}
     page = 0
     per_page = 100
 
-    start_timestamp = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000) if start_date else None
-    end_timestamp = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000) if end_date else None
-
     while True:
-        params = {'page': page, 'per_page': per_page, 'include_deleted': 'true' if include_deleted else 'false'}
-        if start_timestamp and end_timestamp:
-            params['since'] = start_timestamp
-        url = f'{BASE_URL}/channels/{channel_id}/posts'
-        logging.info(f"Fetching posts with params: {params}")
-        response = session.get(url, headers=HEADERS, params=params, verify=VERIFY_SSL)
+        url = f'{BASE_URL}/channels/{channel_id}/posts?page={page}&per_page={per_page}'
+        response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
         response.raise_for_status()
         data = response.json()
         posts = data.get('posts', {})
         if not posts:
             break
         for post in posts.values():
-            post_timestamp = post['create_at']
-            if not FETCH_ALL and ((start_timestamp and post_timestamp < start_timestamp) or (end_timestamp and post_timestamp > end_timestamp)):
-                continue
             add_post(all_posts, post)
         page += 1
 
     sorted_posts = sorted(all_posts.values(), key=lambda x: x['create_at'])
     return sorted_posts
+
+def filter_posts_by_date(posts, start_date, end_date):
+    start_timestamp = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000) if start_date else None
+    end_timestamp = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000) if end_date else None
+    filtered_posts = []
+    
+    for post in posts:
+        post_timestamp = post['create_at']
+        if (start_timestamp and post_timestamp < start_timestamp) or (end_timestamp and post_timestamp > end_timestamp):
+            continue
+        filtered_posts.append(post)
+    
+    return filtered_posts
 
 def add_post(all_posts, post):
     post_details = {
@@ -170,7 +182,7 @@ def add_post(all_posts, post):
         'delete_at': post.get('delete_at', 0),
         'root_id': post.get('root_id', ''),
         'parent_id': post.get('parent_id', ''),
-        'files': [file_info for file_id in post.get('file_ids', []) if (file_info := get_file_info(file_id))],
+        'files': [get_file_info(file_id) for file_id in post.get('file_ids', [])],
         'reactions': get_reactions(post['id']),
         'replies': []
     }
@@ -191,16 +203,8 @@ def generate_html(posts, start_date, end_date, channel_name):
     if not posts:
         logging.info("No posts available to write to HTML.")
     
-    html_content = f'''<html><head><title>Mattermost Channel Posts Export</title>
+    html = f'''<html><head><title>Mattermost Channel Posts Export</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<style>
-    .table-row {{
-        cursor: pointer;
-    }}
-    .modal-body {{
-        white-space: pre-wrap;
-    }}
-</style>
 </head><body>
 <div class="container-flex">
     <div class="text-center my-4">
@@ -214,50 +218,18 @@ def generate_html(posts, start_date, end_date, channel_name):
             <tbody>'''
 
     for post in posts:
-        html_content += format_post(post, is_main=True)
+        html += format_post(post, is_main=True)
         for reply in sorted(post.get('replies', []), key=lambda x: x['create_at']):
-            html_content += format_post(reply, is_main=False)
+            html += format_post(reply, is_main=False)
 
-    html_content += '</tbody></table></div></div>'
-    
-    # Adding modal structure
-    html_content += '''
-<div class="modal fade" id="detailsModal" tabindex="-1" aria-labelledby="detailsModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="detailsModalLabel">Post Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="modal-body-content">
-      </div>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-function showModal(content) {
-    document.getElementById('modal-body-content').innerHTML = content;
-    var myModal = new bootstrap.Modal(document.getElementById('detailsModal'), {});
-    myModal.show();
-}
-
-document.querySelectorAll('.table-row').forEach(row => {
-    row.addEventListener('click', () => {
-        showModal(row.dataset.details);
-    });
-});
-</script>
-</body></html>'''
-
+    html += '</tbody></table></div></div></body></html>'
     output_path = os.path.join('output', channel_name)
     os.makedirs(output_path, exist_ok=True)
     with open(os.path.join(output_path, f'{channel_name}.html'), 'w') as f:
-        f.write(html_content)
+        f.write(html)
 
 def format_post(post, is_main):
-    style = "table-active table-row" if is_main else "table-row"
+    style = "table-active" if is_main else ""
     user = get_user(post['user_id'])
     attachments = ' '.join([f"<a href='{file['download_url']}'>{file['name']}</a> ({file['size']} bytes, {file['mime_type']})" for file in post.get('files', [])])
     reactions = ', '.join([f"{reaction['emoji_name']} (count: {reaction['count']}, users: {', '.join(reaction['users'])})" for reaction in post.get('reactions', [])])
@@ -268,11 +240,7 @@ def format_post(post, is_main):
     thread_indicator = f"<span class='small'>{post['root_id']}</span>" if post['root_id'] and not is_main else ""
     highlighted_message = highlight_mentions(post['message'])
     formatted_message = format_markdown(highlighted_message)
-    
-    # Escaping content for the modal
-    modal_content = html.escape(f"<strong>Message:</strong> {formatted_message}<br><strong>Posted By:</strong> {user['username']}<br><strong>Date:</strong> {datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}<br><strong>Edited:</strong> {edited}<br><strong>Deleted:</strong> {deleted}<br><strong>Attachments:</strong> {attachments}<br><strong>Reactions:</strong> {reactions}<br><strong>Thread:</strong> {thread_indicator}")
-    
-    return f"<tr class='{style}' data-details='{modal_content}'><td>{post['id']}</td><td style='word-wrap: break-word;max-width: 375px'>{formatted_message}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td style='color: {edited_color};'>{edited}</td><td style='color: {deleted_color};'>{deleted}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{reactions}</td><td>{thread_indicator}</td></tr>"
+    return f"<tr class='{style}'><td>{post['id']}</td><td style='word-wrap: break-word;max-width: 375px'>{formatted_message}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td style='color: {edited_color};'>{edited}</td><td style='color: {deleted_color};'>{deleted}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{reactions}</td><td>{thread_indicator}</td></tr>"
 
 def generate_csv(posts, channel_name):
     output_path = os.path.join('output', channel_name)
@@ -305,15 +273,14 @@ def extract_post_details(post, is_main):
 
 def main():
     validate_config()
+    check_system_admin()
     try:
         logging.info(f"START: Running Mattermost Channel Export v{VERSION} ...")
         channel_name = get_channel_name(CHANNEL_ID)
-        if FETCH_ALL:
-            logging.info(f"Exporting all posts from {channel_name}")
-            posts_data = get_posts(CHANNEL_ID, include_deleted=True)
-        else:
-            logging.info(f"Exporting posts from {channel_name} between {START_DATE} and {END_DATE}")
-            posts_data = get_posts(CHANNEL_ID, START_DATE, END_DATE, include_deleted=True)
+        logging.info(f"Exporting posts from {channel_name}")
+        posts_data = get_posts(CHANNEL_ID)
+        if not FETCH_ALL:
+            posts_data = filter_posts_by_date(posts_data, START_DATE, END_DATE)
         logging.info("Generating HTML, CSV, and JSON")
         generate_html(posts_data, START_DATE, END_DATE, channel_name)
         generate_csv(posts_data, channel_name)

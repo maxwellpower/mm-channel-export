@@ -66,6 +66,14 @@ jobs:
             type=sha
             type=ref,event=branch,exclude=latest
 
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v5
@@ -77,3 +85,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Post-build cleanup
+        if: always()
+        run: |
+          docker system prune -f
+          rm -rf /tmp/.buildx-cache

@@ -12,7 +12,7 @@
 # AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 
 import requests
 import os
@@ -140,23 +140,27 @@ def format_markdown(message):
     return html
 
 def get_posts(channel_id):
-    all_posts = {}
+    all_posts = []
     page = 0
     per_page = 100
 
     while True:
-        url = f'{BASE_URL}/channels/{channel_id}/posts?page={page}&per_page={per_page}'
-        response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
+        params = {'page': page, 'per_page': per_page}
+        if is_system_admin:
+            params['include_deleted'] = "true"  # Include deleted posts for system admins
+        url = f'{BASE_URL}/channels/{channel_id}/posts'
+        response = session.get(url, headers=HEADERS, params=params, verify=VERIFY_SSL)
         response.raise_for_status()
         data = response.json()
         posts = data.get('posts', {})
         if not posts:
             break
-        for post in posts.values():
-            add_post(all_posts, post)
+        all_posts.extend(posts.values())
+        if not data.get('has_next', False):
+            break
         page += 1
 
-    sorted_posts = sorted(all_posts.values(), key=lambda x: x['create_at'])
+    sorted_posts = sorted(all_posts, key=lambda x: x['create_at'])
     return sorted_posts
 
 def filter_posts_by_date(posts, start_date, end_date):
@@ -275,7 +279,7 @@ def main():
     validate_config()
     check_system_admin()
     try:
-        logging.info(f"START: Running Mattermost Channel Export v{VERSION} ...")
+        logging.info(f"START: Running Mattermost Channel Export ...")
         channel_name = get_channel_name(CHANNEL_ID)
         logging.info(f"Exporting posts from {channel_name}")
         posts_data = get_posts(CHANNEL_ID)

@@ -1,6 +1,6 @@
 # Mattermost Channel Export
 
-This Docker container is designed to fetch and export posts from a specified Mattermost channel using the Mattermost API. It generates a HTML, CSV, and JSON reports containing the messages posted within a specified date range.
+A containerized application designed to fetch and export posts from a specified Mattermost channel via the API. Generating a HTML, CSV, and JSON exports containing all the messages posted or within a specified date range.
 
 ## Prerequisites
 
@@ -14,15 +14,13 @@ Before you begin, you will need:
 
 - The Channel ID of the channel from which you want to export posts.
 
-- Start and End dates for the data export range. 
-
 ## Configuration
 
 1. **Environment Setup:**
 
 	- Create a `.env` file with the necessary configurations:
 
-```txt
+```bash
 API_TOKEN=your_api_token_here
 BASE_URL=https://your-mattermost-url.com/api/v4
 CHANNEL_ID=your_channel_id_here
@@ -36,33 +34,15 @@ TZ=UTC # Set to your logging timezone
 
 Replace the placeholder values with your API token, base URL, channel ID, and the desired date range.
 
-2. **Pull the Docker Image:**
+## Usage
 
-Pull the Docker image from GitHub Container Registry by running:
-
-```bash
-docker pull ghcr.io/maxwellpower/mm-channel-export:latest
-```
-
-3. **Run the Container:**
-
-Use the following command to run the container, utilizing the environment variables from your .env file:
-
-```bash
-docker run --env-file .env ghcr.io/maxwellpower/mm-channel-export
-```
-
-This command will configure the Docker container using the environment variables defined in the .env file.
-
-## Output
-
-The script will generate an HTML file named `channel_posts.html`, a CSV named `channel_posts.csv` and a JSON named `channel_posts.json` in the working directory inside the Docker container. To access the file outside of the Docker environment, consider mounting a volume to your Docker container:
+The container will generate an HTML file named `posts.html`, a CSV named `posts.csv` and a JSON named `posts.json` inside the `output\<CHANNEL_NAME>` folder inside the working directory of the Docker container. To access the files outside of the container, mount a volume to your Docker container:
 
 ```bash
 docker run --env-file .env -v $(pwd)/output:/app/output ghcr.io/maxwellpower/mm-channel-export
 ```
 
-This will save the `channel_posts.html`, `channel_posts.csv`, and `channel_posts.json` to the output directory on your host machine.
+The above command will save the `posts.html`, `posts.csv`, and `posts.json` to the `output\<CHANNEL_NAME>` directory in your current folder on your host machine.
 
 ## Troubleshooting
 
@@ -71,7 +51,3 @@ If you encounter any issues, ensure your API token has the necessary permissions
 ```bash
 docker logs [container_id]
 ```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.

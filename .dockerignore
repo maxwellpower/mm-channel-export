@@ -3,9 +3,10 @@
 .vscode
 .DS_Store
 .github
+.gitlab
 .gitignore
-README.md
-LICENSE
+.dockerignore
+.git
 defaults.env
 .env
 Dockerfile

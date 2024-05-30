@@ -12,28 +12,26 @@
 # AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 # ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+# File: Dockefile
+
 FROM python:3.9-slim
 
 # Metadata
 LABEL maintainer="maxwell.power@mattermost.com"
 LABEL org.opencontainers.image.title="mm-channel-export"
-LABEL org.opencontainers.image.description="Export Posts from a Channel"
+LABEL org.opencontainers.image.description="Export Posts from a Mattermost Channel"
 LABEL org.opencontainers.image.authors="Maxwell Power"
 LABEL org.opencontainers.image.source="https://github.com/maxwellpower/mm-channel-export"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Create and switch to a new user
-RUN adduser --disabled-password --gecos '' mmuser
-USER mmuser
+RUN adduser --disabled-password --gecos '' export
+USER export
 
-# Set the working directory
 WORKDIR /app
 
-# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the Python script
-COPY main.py .
+COPY . .
 
 CMD ["python", "main.py"]

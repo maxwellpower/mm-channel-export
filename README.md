@@ -22,7 +22,7 @@ Before you begin, you will need:
 
 ```bash
 API_TOKEN=your_api_token_here
-BASE_URL=https://your-mattermost-url.com/api/v4
+BASE_URL=https://your-mattermost-url.com
 CHANNEL_ID=your_channel_id_here
 FETCH_ALL=false # Set true to ignore dates below and fetch all posts
 START_DATE=2023-01-01

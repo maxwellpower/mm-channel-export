@@ -15,19 +15,23 @@
 # File: main.py
 
 import requests  # type: ignore
+import urllib3  # type: ignore
+import markdown  # type: ignore
+
+from requests.adapters import HTTPAdapter  # type: ignore
+from requests.packages.urllib3.util.retry import Retry  # type: ignore
+from urllib3.util import parse_url  # type: ignore
+from dotenv import load_dotenv  # type: ignore
+
 import os
 import csv
 import json
 import logging
-from datetime import datetime
-from requests.adapters import HTTPAdapter  # type: ignore
-from requests.packages.urllib3.util.retry import Retry  # type: ignore
-from dotenv import load_dotenv  # type: ignore
-import urllib3  # type: ignore
-from collections import defaultdict
 import re
-import markdown  # type: ignore
 import html
+
+from datetime import datetime
+from collections import defaultdict
 
 # Load environment variables
 load_dotenv()
@@ -70,7 +74,7 @@ is_system_admin = False
 def validate_config():
     if not API_TOKEN or not BASE_URL or not CHANNEL_ID:
         logging.critical(
-            "OOPS! Configuration is not valid!\nPlease ensure API_TOKEN, BASE_URL, and CHANNEL_ID envrionment variables are set.\nSee README for usage details."
+            "FAILED: OOPS! Configuration is not valid!\nPlease ensure API_TOKEN, BASE_URL, and CHANNEL_ID envrionment variables are set.\nSee README for usage details."
         )
         exit(1)
     else:
@@ -81,26 +85,33 @@ def validate_config():
             global bootstrap_version
             script_version = version_data["version"]
             bootstrap_version = version_data["bootstrap_version"]
-        if script_version and bootstrap_version:
-            logging.debug("Configuration Loaded Successfully")
+            api_version = version_data["api_version"]
+        if script_version:
+            # Filter the URL just incase
+            global server_domain
+            global API_ENDPOINT
+            server_domain = parse_url(BASE_URL).host
+            API_ENDPOINT = f"{parse_url(BASE_URL).scheme}://{server_domain}/api/v{api_version}"
+            logging.info(f"Using API_ENDPOINT: {API_ENDPOINT}")
+            logging.info("Configuration Loaded Successfully")
         else:
-            logging.critical("Unable to configure script version")
+            logging.critical("FAILED: Configuration Not Loaded")
             exit(1)
 
 
 # Check the API connection and get the server version
 def get_server_version():
-    url = f"{BASE_URL}/system/ping"
+    url = f"{API_ENDPOINT}/system/ping"
     response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
     response.raise_for_status()
     response_json = response.json()
-    server_version = response.headers.get("X-Version-Id", "Unknown version")
+    api_version = response.headers.get("X-Version-Id", "Unknown version")
     version = (
-        ".".join(server_version.split(".")[:3])
-        if "Unknown version" not in server_version
-        else server_version
+        ".".join(api_version.split(".")[:3])
+        if "Unknown version" not in api_version
+        else api_version
     )
-    if "Unknown version" in server_version:
+    if "Unknown version" in api_version:
         logging.critical("API Connection Failed!")
         if DEBUG_MODE:
             logging.debug(f"Response Headers: {response.headers}")
@@ -108,8 +119,9 @@ def get_server_version():
 
         exit(1)
     else:
+        global server_version
+        server_version = version
         logging.info(f"Successfully connected to Mattermost {version}")
-    return version
 
 
 # Get current user and check roles
@@ -117,7 +129,7 @@ def check_system_admin():
 
     # Get the details for the current user
     def get_current_user():
-        url = f"{BASE_URL}/users/me"
+        url = f"{API_ENDPOINT}/users/me"
         response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
         response.raise_for_status()
         user_info = response.json()
@@ -145,7 +157,7 @@ def check_system_admin():
 def get_user(user_id):
     if user_id in user_cache:
         return user_cache[user_id]
-    url = f"{BASE_URL}/users/{user_id}"
+    url = f"{API_ENDPOINT}/users/{user_id}"
     response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
     response.raise_for_status()
     user_info = response.json()
@@ -159,7 +171,7 @@ def get_user(user_id):
 
 # Get the name of the channel
 def get_channel_name(channel_id):
-    url = f"{BASE_URL}/channels/{channel_id}"
+    url = f"{API_ENDPOINT}/channels/{channel_id}"
     response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
     response.raise_for_status()
     channel_info = response.json()
@@ -175,7 +187,7 @@ def get_posts(channel_id):
 
     def fetch_thread_posts(root_id):
         thread_posts = []
-        url = f"{BASE_URL}/posts/{root_id}/thread"
+        url = f"{API_ENDPOINT}/posts/{root_id}/thread"
         response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
         response.raise_for_status()
         data = response.json()
@@ -197,7 +209,7 @@ def get_posts(channel_id):
             params["include_deleted"] = (
                 "true"  # Include deleted posts for system admins
             )
-        url = f"{BASE_URL}/channels/{channel_id}/posts"
+        url = f"{API_ENDPOINT}/channels/{channel_id}/posts"
         response = session.get(url, headers=HEADERS, params=params, verify=VERIFY_SSL)
         response.raise_for_status()
         data = response.json()
@@ -271,7 +283,7 @@ def add_post(all_posts, post):
         if DEBUG_MODE:
             logging.debug(f"Fetching reactions for post_id: {post_id}")
 
-        url = f"{BASE_URL}/posts/{post_id}/reactions"
+        url = f"{API_ENDPOINT}/posts/{post_id}/reactions"
         response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
         response.raise_for_status()
         reactions = response.json() or []
@@ -294,7 +306,7 @@ def add_post(all_posts, post):
     def get_file_info(file_id):
         if DEBUG_MODE:
             logging.debug(f"Fetching file info for file_id: {file_id}")
-        url = f"{BASE_URL}/files/{file_id}/info"
+        url = f"{API_ENDPOINT}/files/{file_id}/info"
         try:
             response = session.get(url, headers=HEADERS, verify=VERIFY_SSL)
             response.raise_for_status()
@@ -313,7 +325,7 @@ def add_post(all_posts, post):
                     else "N/A"
                 ),
                 "uploader_id": file_info.get("user_id"),
-                "download_url": f"{BASE_URL}/files/{file_id}",
+                "download_url": f"{API_ENDPOINT}/files/{file_id}",
             }
         except requests.HTTPError as e:
             if e.response.status_code == 404:
@@ -394,20 +406,21 @@ def generate_html(posts, start_date, end_date, channel_name):
         edited_color = "red" if edited == "Yes" else "inherit"
         deleted_color = "red" if deleted == "Yes" else "inherit"
         thread_indicator = f"{post['root_id']}" if post["root_id"] else ""
-        highlighted_message = highlight_mentions(post["message"])
+        raw_message = post["message"]
+        highlighted_message = highlight_mentions(raw_message)
         formatted_message = format_markdown(highlighted_message)
         formatted_modal_message = format_modal_markdown(highlighted_message)
 
         if is_system_admin:
             modal_content = html.escape(
-                f"<strong>Post ID:</strong> {post['id']}<br><strong>Message:</strong> {formatted_modal_message}<br><strong>Posted By:</strong> {user['username']}<br><strong>Date:</strong> {datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}<br><strong>Edited:</strong> {edited}<br><strong>Deleted:</strong> {deleted}<br><strong>Attachments:</strong> {attachments}<br><strong>Reactions:</strong> {reactions}<br><strong>Parent:</strong> {thread_indicator}"
+                f"<strong>Formatted Message:</strong> {formatted_modal_message}<br><strong>Post ID:</strong> {post['id']}<br><strong>Posted By:</strong> {user['username']}<br><strong>Date:</strong> {datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}<br><strong>Edited:</strong> {edited}<br><strong>Deleted:</strong> {deleted}<br><strong>Attachments:</strong> {attachments}<br><strong>Reactions:</strong> {reactions}<br><strong>Parent:</strong> {thread_indicator}<br><strong>Raw Message:</strong><textarea rows='5' cols='75'>{raw_message}</textarea>"
             )
-            formatted_html_output = f"<tr class='{style} table-row' data-post_id='{post['id']}' data-details='{modal_content}'><td>{post_id_formatted}</td><td style='word-wrap: break-word;max-width: 350px'>{formatted_message}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td style='color: {edited_color};'>{edited}</td><td style='color: {deleted_color};'>{deleted}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{reactions}</td><td>{thread_indicator}</td></tr>"
+            formatted_html_output = f"<tr class='{style} table-row' data-post_id='{post['id']}' data-details='{modal_content}'><th scope='row'>{post_id_formatted}</td><td style='word-wrap: break-word;max-width: 350px'>{formatted_message}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td style='color: {edited_color};'>{edited}</td><td style='color: {deleted_color};'>{deleted}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{reactions}</td><td>{thread_indicator}</td></tr>"
         else:
             modal_content = html.escape(
-                f"<strong>Post ID:</strong> {post['id']}<br><strong>Message:</strong> {formatted_modal_message}<br><strong>Posted By:</strong> {user['username']}<br><strong>Date:</strong> {datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}<br><strong>Edited:</strong> {edited}<br><strong>Attachments:</strong> {attachments}<br><strong>Reactions:</strong> {reactions}<br><strong>Parent:</strong> {thread_indicator}"
+                f"<strong>Formatted Message:</strong> {formatted_modal_message}<br><strong>Post ID:</strong> {post['id']}<br><strong>Posted By:</strong> {user['username']}<br><strong>Date:</strong> {datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}<br><strong>Edited:</strong> {edited}<br><strong>Attachments:</strong> {attachments}<br><strong>Reactions:</strong> {reactions}<br><strong>Parent:</strong> {thread_indicator}<br><strong>Raw Message:</strong><textarea rows='5' cols='75'>{raw_message}</textarea>"
             )
-            formatted_html_output = f"<tr class='{style} table-row' data-post_id='{post['id']}' data-details='{modal_content}'><td>{post_id_formatted}</td><td style='word-wrap: break-word;max-width: 350px'>{formatted_message}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td style='color: {edited_color};'>{edited}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{reactions}</td><td>{thread_indicator}</td></tr>"
+            formatted_html_output = f"<tr class='{style} table-row' data-post_id='{post['id']}' data-details='{modal_content}'><th scope='row'>{post_id_formatted}</td><td style='word-wrap: break-word;max-width: 350px'>{formatted_message}</td><td>{user['username']}</td><td>{datetime.fromtimestamp(post['create_at'] / 1000).strftime('%Y-%m-%d %H:%M:%S')}</td><td style='color: {edited_color};'>{edited}</td><td style='word-wrap: break-word;max-width: 200px'>{attachments}</td><td>{reactions}</td><td>{thread_indicator}</td></tr>"
 
         return formatted_html_output
 
@@ -451,17 +464,17 @@ def generate_html(posts, start_date, end_date, channel_name):
                     </div>
                 </div>
             </header>
-            <div class="row">
-                <div class="col">
+            <div class="row alert alert-light">
+                <div class="col-10 offset-1">
                     <div class="table-responsive">
-                        <table class="table table-bordered table-hover">"""
+                        <table class="table table-bordered table-hover table-sm"><caption>{"All posts" if FETCH_ALL else f"Posts from {start_date} to {end_date}"} in {channel_name} as of {report_datetime}</caption>"""
 
     if is_system_admin:
         html_content += '<thead><tr class="table-dark"><th>ID</th><th>Message</th><th>Posted By</th><th>Date</th><th>Edited</th><th>Deleted</th><th>Attachments</th><th>Reactions</th><th>Parent</th></tr></thead>'
     else:
         html_content += '<thead><tr class="table-dark"><th>ID</th><th>Message</th><th>Posted By</th><th>Date</th><th>Edited</th><th>Attachments</th><th>Reactions</th><th>Parent</th></tr></thead>'
 
-    html_content += "<tbody>"
+    html_content += '<tbody class="table-group-divider">'
 
     for post in posts:
         if post["root_id"] == "":
@@ -481,7 +494,8 @@ def generate_html(posts, start_date, end_date, channel_name):
                 <div class="row">
                     <div class="col">
                         <div class="text-center my-4">
-                            <p>Exported on {report_datetime} by {report_username}</p>
+                            <p>{channel_name} exported on {report_datetime} by {report_username}</p>
+                            <p>Mattermost Server: {server_domain} Version: v{server_version}</p>
                         </div>
                     </div>
                 </div>
@@ -630,10 +644,10 @@ def generate_json(posts, channel_name):
 
 # The main program
 def main():
+    logging.info(f"Validating Configuration Settings ...")
     validate_config()
-
     try:
-        logging.info(f"START: Running Mattermost Channel Export v{script_version} ...")
+        logging.info(f"Running Mattermost Channel Export v{script_version} ...")
         get_server_version()
         check_system_admin()
         channel_name = get_channel_name(CHANNEL_ID)
